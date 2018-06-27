@@ -36,16 +36,16 @@ int main(void)
 	fd = open_file();
 
 	if (fork() == 0) { /* child process */
-		sleep(5);
+		sleep(10);
 		close_file(fd);
 		exit(1);
 	}
 
-	wait(&status);
 
-	sleep(10);
+	sleep(5);
 
 	close_file(fd);
 
+	wait(&status);
 	return 0;
 }
