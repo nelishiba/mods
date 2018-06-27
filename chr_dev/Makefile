@@ -1,10 +1,11 @@
-KERNEL_DIR = /lib/modules/$(shell uname -r)/build 
-BUILD_DIR := $(shell pwd)
-VERBOSE := 0 
+ccflags := -Wall
+CFILES = chrdev.c
 
-obj-m := helloworld.o 
+obj-m += sample.o
+sample-objs := $(CFILES:.c=.o)
 
-all: 
-	    make -C $(KERNEL_DIR) SUBDIRS=$(BUILD_DIR) KBUILD_VERBOSE=$(VERBOSE) modules 
-clean: 
-	    rm -rf *.o *.ko *.mod.c *.symvers *.order .tmp_versions .helloworld.*
+all:
+	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules V=1
+
+clean:
+	make -C /lib/modules/$(shell uname -r)/build M-$(PWD) clean V-1

@@ -1,33 +1,92 @@
-#include <linux/config.h>
 #include <linux/module.h>
+#include <linux/init.h>
+#include <linux/types.h>
 #include <linux/kernel.h>
+#include <linux/fs.h>
+#include <linux/cdev.h>
+#include <linux/sched.h>
+#include <asm/current.h>
+#include <asm/uaccess.h>
 
-MODULE_DESCRIPTION("Small Test Module");
-MODULE_AUTHOR("kztomita");
-MODULE_LICENSE("GPL");
+MODULE_LICENSE("Dual BSD/GPL");
 
-/* Moduleがロードされた時に呼び出される初期化ルーチン */
-static int smallmod_init_module(void)
+#define DRIVER_NAME "devone"
+
+static unsigned int devone_major = 0;
+module_param(devone_major, uint, 0);
+
+static int devone_open(struct inode *inode, struct file *file)
 {
-	int error = 0;
+	printk("%s: major %d, minor %d (pid %d) \n", __func__,
+			imajor(inode),
+			iminor(inode),
+			current->pid
+		  );
 
-	/*
-	 *          * 初期化処理を行なう
-	 *                   */
-	printk("smallmod is loaded.\n");
+	inode->i_private = inode;
+	file->private_data = file;
 
-	/* エラーの場合 */
-	if (error)
-		return  -ENODEV;
+	printk("  i_private=%p private_data=%p\n",
+			inode->i_private, 
+			file->private_data
+		  );
 
+	// success
 	return 0;
 }
 
-/* Moduleがアンロードされたる時に呼び出される後処理 */
-static void smallmod_cleanup_module(void)
+static int devone_close(struct inode *inode, struct file *file)
 {
-	printk("smallmod is unloaded.\n");
+	printk("%s: major %d, minor %d (pid %d) \n", __func__,
+			imajor(inode),
+			iminor(inode),
+			current->pid
+		  );
+
+	inode->i_private = inode;
+	file->private_data = file;
+
+	printk("  i_private=%p private_data=%p\n",
+			inode->i_private, 
+			file->private_data
+		  );
+
+	// success
+	return 0;
 }
 
-module_init(smallmod_init_module);
-module_exit(smallmod_cleanup_module);
+struct file_operations devone_fops = {
+	.open = devone_open,
+	.release = devone_close,
+};
+
+static int devone_init(void)
+{
+	int major;
+	int ret = 0;
+
+	major = register_chrdev(devone_major, DRIVER_NAME, &devone_fops);
+	if ((devone_major > 0 && major != 0) || 
+			(devone_major == 0 && major < 0) ||
+			major < 0) {
+		printk("%s driver registration error\n", DRIVER_NAME);
+		ret = major;
+		goto error;
+	}
+	if (devone_major == 0) { /* dynamic allocation */
+		devone_major = major;
+	}
+
+error:
+	return (ret);
+}
+
+static void devone_exit(void)
+{
+	unregister_chrdev(devone_major, DRIVER_NAME);
+
+	printk("%s drive removed.\n", DRIVER_NAME);
+}
+
+module_init(devone_init);
+module_exit(devone_exit);
