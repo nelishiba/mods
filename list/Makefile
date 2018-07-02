@@ -1,8 +1,9 @@
-ccflags := -Wall
-CFILES = chrdev.c
+obj-m: mylist.o
 
-obj-m += sample.o
-sample-objs := $(CFILES:.c=.o)
+mylist-objs := $(CFILES:.c=.o)
+
+ccflags-y := -Wall
+
 
 all:
 	make -C /lib/modules/$(shell uname -r)/build M=$(PWD) modules V=1
