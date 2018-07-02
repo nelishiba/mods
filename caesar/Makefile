@@ -1,5 +1,3 @@
-CFILES = caesar-mod.c
-
 obj-m := caesar.o
 caesar-objs := $(CFILES:.c=.o)
 
