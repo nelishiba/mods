@@ -11,6 +11,7 @@
 #define DEVFILE "/dev/caesar"
 #define STRING1 "hello, world!"
 #define STRING2 "Don't be Lazy!"
+#define STRING3 "I'm nelio"
 
 int open_file(char *filename)
 {
@@ -59,14 +60,18 @@ int main(void)
 	int fd;
 	char *str1 = STRING1;
 	char *str2 = STRING2;
+	char *str3 = STRING3;
 
 	fd = open_file(DEVFILE);
 
 	write_file(fd, str1);
 	read_file(fd, strlen(str1));
 
-// write_file(fd, str2);
+	write_file(fd, str2);
 	read_file(fd, strlen(str2));
+
+	write_file(fd, str3);
+	read_file(fd, strlen(str3));
 
 	close_file(fd);
 

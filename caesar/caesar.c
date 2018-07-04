@@ -14,6 +14,7 @@ MODULE_LICENSE("Dual BSD/GPL");
 
 #define DRIVER_NAME "caesar"
 #define KEY 5
+#define MAX_DATA_SIZE 4096
 
 static int caesar_devs = 1; /* device count */
 static int caesar_major = 0; /* dynamic allocation */
@@ -22,7 +23,7 @@ static struct cdev caesar_cdev;
 
 struct caesar_data {
 	rwlock_t lock;
-	char *data;
+	char data[MAX_DATA_SIZE];
 	int key;
 };
 
@@ -36,9 +37,8 @@ ssize_t caesar_write(struct file *filp, const char __user *buf, size_t count,
 	printk(KERN_ALERT "%s: count %ld pos %lld\n", __func__, count, *f_ops);
 
 	if (count > 0) {
-		write_lock(&p->lock);
+	//	write_lock(&p->lock);
 
-		p->data = (char *)kmalloc((sizeof(char) * count), GFP_KERNEL);
 		if (!p) {
 			retval = -ENOMEM;
 			printk(KERN_ALERT "%s:%d failed to kmalloc\n", __func__, __LINE__);
@@ -60,7 +60,7 @@ ssize_t caesar_write(struct file *filp, const char __user *buf, size_t count,
 	}
 
 exit:
-	write_unlock(&p->lock);
+	//write_unlock(&p->lock);
 	return retval;
 }
 
@@ -72,7 +72,7 @@ ssize_t caesar_read(struct file *filp, char __user *buf, size_t count,
 
 	printk("%s: count %ld pos %lld\n", __func__, count, *f_ops);
 
-	read_lock(&p->lock);
+	//read_lock(&p->lock);
 	if (copy_to_user(buf, p->data, count)) {
 		printk(KERN_ALERT "%s:%d failed to copy_to_user\n", __func__, __LINE__);
 		retval = -EFAULT;
