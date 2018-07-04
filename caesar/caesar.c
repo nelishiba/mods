@@ -13,7 +13,7 @@
 MODULE_LICENSE("Dual BSD/GPL");
 
 #define DRIVER_NAME "caesar"
-#define KEY 5
+#define KEY (5)
 #define MAX_DATA_SIZE 4096
 
 static int caesar_devs = 1; /* device count */
@@ -54,9 +54,9 @@ ssize_t caesar_write(struct file *filp, const char __user *buf, size_t count,
 		retval = count;
 		for (i = 0; i < count; i++) {
 			if ('A' <= p->data[i] && p->data[i] <= 'Z') {
-				p->data[i] = 'A' + (p->data[i] + KEY) % 26;
+				p->data[i] = 'A' + (p->data[i] + KEY - 'A') % 26;
 			} else if ('a' <= p->data[i] && p->data[i] <= 'z') {
-				p->data[i] = 'a' + (p->data[i] + KEY) % 26;
+				p->data[i] = 'a' + (p->data[i] + KEY - 'a') % 26;
 			}
 		}
 	}

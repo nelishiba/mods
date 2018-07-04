@@ -9,9 +9,11 @@
 #include <errno.h>
 
 #define DEVFILE "/dev/caesar"
-#define STRING1 "hello, world!"
-#define STRING2 "Don't be Lazy!"
-#define STRING3 "I'm nelio"
+#define STRING1 "czggj, rjmgy!" /* "hello world!" */
+#define STRING2 "Yjk'o wz gvut!" /* "Don't be Lazy!" */
+#define STRING3 "D'h izgdj" /* "I'm nelio" */
+
+
 
 int open_file(char *filename)
 {
