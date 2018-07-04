@@ -42,14 +42,12 @@ ssize_t caesar_write(struct file *filp, const char __user *buf, size_t count,
 		if (!p) {
 			retval = -ENOMEM;
 			printk(KERN_ALERT "%s:%d failed to kmalloc\n", __func__, __LINE__);
-			write_unlock(&p->lock);
-			goto error;
+			goto exit;
 		}
 		if (copy_from_user(p->data, buf, count)) {
 			printk(KERN_ALERT "%s:%d failed to copy_from_user\n", __func__, __LINE__);
 			retval = -EFAULT;
-			write_unlock(&p->lock);
-			goto error;
+			goto exit;
 		}
 		retval = count;
 		for (i = 0; i < count; i++) {
@@ -59,10 +57,10 @@ ssize_t caesar_write(struct file *filp, const char __user *buf, size_t count,
 				p->data[i] = 'a' + (p->data[i] + KEY) % 26;
 			}
 		}
-		write_unlock(&p->lock);
 	}
 
-error:
+exit:
+	write_unlock(&p->lock);
 	return retval;
 }
 
@@ -78,11 +76,11 @@ ssize_t caesar_read(struct file *filp, char __user *buf, size_t count,
 	if (copy_to_user(buf, p->data, count)) {
 		printk(KERN_ALERT "%s:%d failed to copy_to_user\n", __func__, __LINE__);
 		retval = -EFAULT;
-		goto error;
+		goto exit;
 	}
 	retval = count;
 
-error:
+exit:
 	return retval;
 }
 
@@ -149,7 +147,7 @@ static int caesar_init(void)
 	/* dynamically allocate device number */
 	alloc_ret = alloc_chrdev_region(&dev, 0, caesar_devs, DRIVER_NAME);
 	if (alloc_ret) {
-		goto error;
+		goto exit;
 	}
 	/* MAJOR(dev) returns major device number got by alloc_chrdev_region */
 	caesar_major = major = MAJOR(dev);
@@ -160,14 +158,14 @@ static int caesar_init(void)
 
 	cdev_err = cdev_add(&caesar_cdev, MKDEV(caesar_major, 0), caesar_devs);
 	if (cdev_err) {
-		goto error;
+		goto exit;
 	}
 
 	printk(KERN_ALERT "%s driver(major %d) installed.\n", DRIVER_NAME, major);
 
 	return 0;
 
-error:
+exit:
 	if (cdev_err == 0) {
 		cdev_del(&caesar_cdev);
 	}
