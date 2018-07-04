@@ -33,7 +33,7 @@ void close_file(int fd)
 
 void read_file(int fd, int len)
 {
-	unsigned char buf[256];
+	unsigned char buf[256] = {'\0'};
 
 	ssize_t ret;
 
