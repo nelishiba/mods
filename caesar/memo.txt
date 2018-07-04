@@ -1,0 +1,10 @@
+PREREQUISITE
+
+# edit the following file
+sudo vim /etc/udev/rules.d/51-caesar.rules
+
+# write the following text
+KERNEL=="caesar", GROUP="root", MODE="0666"
+
+# make; insmode caesar.ko, and check whether /dev/caesar exists
+ls -l /dev/caesar
