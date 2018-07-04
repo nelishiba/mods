@@ -20,6 +20,8 @@ static int caesar_devs = 1; /* device count */
 static int caesar_major = 0; /* dynamic allocation */
 module_param(caesar_major, uint, 0); /* args when running insmod caesar_major=<args> */
 static struct cdev caesar_cdev;
+static struct class *caesar_class = NULL;
+static struct device *caesar_dev;
 
 struct caesar_data {
 	rwlock_t lock;
@@ -144,6 +146,7 @@ static int caesar_init(void)
 	int alloc_ret = 0;
 	int major;
 	int cdev_err = 0;
+	struct device *class_dev = NULL;
 
 	/* dynamically allocate device number */
 	alloc_ret = alloc_chrdev_region(&dev, 0, caesar_devs, DRIVER_NAME);
@@ -156,6 +159,21 @@ static int caesar_init(void)
 	/* init character-type device with file operations */
 	cdev_init(&caesar_cdev, &caesar_fops);
 	caesar_cdev.owner = THIS_MODULE;
+	caesar_cdev.ops = &caesar_fops;
+
+	/* register class */
+	caesar_class = class_create(THIS_MODULE, "caesar");
+	if (IS_ERR(caesar_class)) {
+		goto exit;
+	}
+
+	//caesar_dev = MKDEV(caesar_major, 0);
+	class_dev = device_create(
+			caesar_class,
+			NULL,
+			MKDEV(caesar_major, 0),
+			NULL,
+			"caesar");
 
 	cdev_err = cdev_add(&caesar_cdev, MKDEV(caesar_major, 0), caesar_devs);
 	if (cdev_err) {
@@ -180,6 +198,10 @@ static void caesar_exit(void)
 {
 	/* get device number */
 	dev_t dev = MKDEV(caesar_major, 0);
+
+	/* unregister class */ 
+	device_destroy(caesar_class, MKDEV(caesar_major, 0));
+	class_destroy(caesar_class);
 
 	cdev_del(&caesar_cdev);
 	unregister_chrdev_region(dev, caesar_devs);
