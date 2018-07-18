@@ -73,7 +73,7 @@ static int accept_func(void *arg)
 			continue;
 		}
 	}
-	printk(KERN_INFO MODULE_NAME "stop accept_kth\n");
+	printk(KERN_INFO MODULE_NAME ": stop accept_kth\n");
 
 	return 0;	
 }
