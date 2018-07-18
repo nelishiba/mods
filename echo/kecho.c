@@ -59,6 +59,7 @@ static int accept_func(void *arg)
 	int ret;
 	int count = 0;
 	struct socket *sock_rw;
+	allow_signal(SIGTERM);
 
 	while (!kthread_should_stop()) {
 		ret = kernel_accept(sock, &sock_rw, 0);
@@ -140,6 +141,7 @@ static void kecho_exit(void)
 	int err;
 
 	printk(KERN_INFO MODULE_NAME ": start unloading...\n");
+	send_sig(SIGTERM, accept_kth, 0);
 
 	/* stop othre threads */
 	kthread_stop(accept_kth);
