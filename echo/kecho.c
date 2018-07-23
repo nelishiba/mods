@@ -7,16 +7,17 @@
 #include <net/sock.h>
 #include <linux/kthread.h>
 #include <linux/kernel.h>
+#include <linux/completion.h>
+#include <asm/atomic.h>
 
-#define MODULE_NAME "Kernel-ECHO"
-#define PORT 8880
-#define MSG_SIZE 20
+#include "myheader.h"
 
 #define ERROR_PRINT(func) \
 	do { \
 		printk(KERN_ALERT MODULE_NAME ": " #func " failed: %s:%d\n", \
 				__func__, __LINE__); \
     } while (0)
+
 
 MODULE_DESCRIPTION("TCP Echo server in Linux kernel");
 MODULE_AUTHOR("Hiroki Watanabe");
@@ -25,15 +26,25 @@ MODULE_LICENSE("Dual GPL/BSD");
 static struct socket *sock;
 
 static struct task_struct *accept_kth;
-static struct task_struct *rw_kth;
+DECLARE_COMPLETION(accept_cpl);
+
+struct client {
+	struct task_struct *rw_kth;
+	struct socket *rw_sock;
+	char *buf;
+};
+
+static struct client clients[MAX_CLIENTS];
+
+static atomic_t nr_clients;
 
 static int rw_func(void *arg)
 {
 	struct msghdr msg;
 	int ret = 0;
-	struct socket *sock_rw = arg;
+	struct socket *sock_rw = ((struct client *)arg)->rw_sock;
 	struct kvec vec;
-	int len;
+	int len = 0;
 
 	/* recv and send */
 	msg.msg_name = 0;
@@ -45,11 +56,21 @@ static int rw_func(void *arg)
 	vec.iov_len = MSG_SIZE;
 	vec.iov_base = kmalloc(MSG_SIZE, GFP_KERNEL);
 
-	len = kernel_recvmsg(sock_rw, &msg, &vec, MSG_SIZE, MSG_SIZE, msg.msg_flags);
-	if (len < 0) {
-		ERROR_PRINT(kernel_recvmsg);
+	while (len < 0) {
+		len = kernel_recvmsg(sock_rw, &msg, &vec, MSG_SIZE, MSG_SIZE, msg.msg_flags);
+		if (len < 0) {
+			printk(KERN_ALERT "err:%d\n", len);
+			ERROR_PRINT(kernel_recvmsg);
+			break;
+		}
+		printk(KERN_INFO MODULE_NAME "recv: %s (%d)\n", (char *)vec.iov_base, len);
 	}
 
+
+	printk(KERN_INFO MODULE_NAME ": stop rw_kth\n");
+
+	atomic_dec(&nr_clients);
+	wake_up_process(accept_kth);
 
 	return ret;
 }
@@ -57,31 +78,48 @@ static int rw_func(void *arg)
 static int accept_func(void *arg)
 {
 	int ret;
-	int count = 0;
-	struct socket *sock_rw;
-	allow_signal(SIGTERM);
+	int cnt;
 
-	while (!kthread_should_stop()) {
-		ret = kernel_accept(sock, &sock_rw, 0);
+	while (1) {
+		cnt = atomic_read(&nr_clients);
+		printk("cnt = %d\n", cnt);
+		ret = kernel_accept(sock, &clients[cnt].rw_sock, 0);
+		printk("kernel_accept:ret = %d\n", cnt);
+		
 		if (ret < 0) {
+			printk(KERN_ALERT "err:%d\n", ret);
 			ERROR_PRINT(kernel_accept);
-			continue;
+			break;
 		}
-		rw_kth = kthread_run(rw_func, &sock_rw, "rw_kth:%d", count++);
-		if (IS_ERR(rw_kth)) {
+		clients[cnt].rw_kth = kthread_run(rw_func, &clients[cnt], "rw_kth:%d", cnt);
+		if (IS_ERR(clients[cnt].rw_kth)) {
 			ERROR_PRINT(kthread_run);
 			continue;
 		}
+		atomic_inc(&nr_clients);
+
+		/* check whether accepting a new client or not */
+		while (atomic_read(&nr_clients) == MAX_CLIENTS) {
+			schedule();
+		}
 	}
+
+	/* wait for all rw_kth stopping themselves */
+	while (atomic_read(&nr_clients) != 0) {
+		schedule();
+	}
+	
 	printk(KERN_INFO MODULE_NAME ": stop accept_kth\n");
 
-	return 0;	
+	complete_and_exit(&accept_cpl, 0);
 }
 
 static int kecho_init(void)
 {
 	int ret = 0;
 	struct sockaddr_in addr;
+
+	atomic_set(&nr_clients, 0);
 
 	printk(KERN_INFO MODULE_NAME ": start loading...\n");
 
@@ -140,12 +178,13 @@ static void kecho_exit(void)
 {
 	int err;
 
-	printk(KERN_INFO MODULE_NAME ": start unloading...\n");
-	send_sig(SIGTERM, accept_kth, 0);
 
-	/* stop othre threads */
-	kthread_stop(accept_kth);
-	//kthread_stop(rw_kth);
+	printk(KERN_INFO MODULE_NAME ": start unloading...\n");
+
+	/* wait for stopping othre threads */
+	err = wake_up_process(accept_kth);
+	printk(KERN_INFO MODULE_NAME "wake_up_process:ret %d\n", err);
+	wait_for_completion(&accept_cpl);
 
 	/* close listen socket */
 	err = kernel_sock_shutdown(sock, SHUT_RDWR);
