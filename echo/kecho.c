@@ -183,7 +183,7 @@ static void kecho_exit(void)
 
 	/* wait for stopping othre threads */
 	err = wake_up_process(accept_kth);
-	printk(KERN_INFO MODULE_NAME "wake_up_process:ret %d\n", err);
+	printk(KERN_INFO MODULE_NAME ": wake_up_process:ret %d\n", err);
 	wait_for_completion(&accept_cpl);
 
 	/* close listen socket */
