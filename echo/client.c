@@ -40,7 +40,8 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "a connection has been established\n");
 
-	sleep(3);
+	for (;;)
+		sleep(10);
 
 	close(sock);
 

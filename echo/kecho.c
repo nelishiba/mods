@@ -26,13 +26,16 @@ MODULE_LICENSE("Dual GPL/BSD");
 static struct socket *sock;
 
 static struct task_struct *accept_kth;
-DECLARE_COMPLETION(accept_cpl);
+//DECLARE_COMPLETION(accept_cpl);
+static struct completion accept_cpl;
 
 struct client {
 	struct task_struct *rw_kth;
 	struct socket *rw_sock;
 	char *buf;
 };
+
+
 
 static struct client clients[MAX_CLIENTS];
 
@@ -44,7 +47,7 @@ static int rw_func(void *arg)
 	int ret = 0;
 	struct socket *sock_rw = ((struct client *)arg)->rw_sock;
 	struct kvec vec;
-	int len = 0;
+	int len;
 
 	/* recv and send */
 	msg.msg_name = 0;
@@ -56,21 +59,27 @@ static int rw_func(void *arg)
 	vec.iov_len = MSG_SIZE;
 	vec.iov_base = kmalloc(MSG_SIZE, GFP_KERNEL);
 
-	while (len < 0) {
+	do  {
 		len = kernel_recvmsg(sock_rw, &msg, &vec, MSG_SIZE, MSG_SIZE, msg.msg_flags);
+		printk(KERN_ALERT MODULE_NAME ": sock->state:%d\n", sock_rw->state);
+		if (sock_rw->state == SS_DISCONNECTING) {
+			
+		}
 		if (len < 0) {
 			printk(KERN_ALERT "err:%d\n", len);
 			ERROR_PRINT(kernel_recvmsg);
 			break;
 		}
 		printk(KERN_INFO MODULE_NAME "recv: %s (%d)\n", (char *)vec.iov_base, len);
-	}
+	} while (len > 0);
 
 
+	kfree(vec.iov_base);
+	kernel_sock_shutdown(sock_rw, SHUT_RDWR);
+	sock_release(sock_rw);
+	
 	printk(KERN_INFO MODULE_NAME ": stop rw_kth\n");
-
 	atomic_dec(&nr_clients);
-	wake_up_process(accept_kth);
 
 	return ret;
 }
@@ -79,17 +88,32 @@ static int accept_func(void *arg)
 {
 	int ret;
 	int cnt;
+	int i;
+
+	for (i = 0; i < MAX_CLIENTS; i++) {
+		clients[i].rw_kth = kthread_create(rw_func, &clients[i], "rw_kth:%d", i);
+	}
 
 	while (1) {
 		cnt = atomic_read(&nr_clients);
-		printk("cnt = %d\n", cnt);
+		printk(KERN_INFO MODULE_NAME ": wait for a new client arrival...\n");
 		ret = kernel_accept(sock, &clients[cnt].rw_sock, 0);
-		printk("kernel_accept:ret = %d\n", cnt);
+
+		if (!kthread_should_stop()) {
+			printk(KERN_ALERT MODULE_NAME ": GET INTERRUPTION: BRINGING DOWN...\n");
+			break;
+		}
+
+		if (ret == -EINVAL) {
+			printk(KERN_ALERT "err:%d\n", ret);
+			continue;
+		}
+
 		
 		if (ret < 0) {
 			printk(KERN_ALERT "err:%d\n", ret);
 			ERROR_PRINT(kernel_accept);
-			break;
+			continue;
 		}
 		clients[cnt].rw_kth = kthread_run(rw_func, &clients[cnt], "rw_kth:%d", cnt);
 		if (IS_ERR(clients[cnt].rw_kth)) {
@@ -99,7 +123,7 @@ static int accept_func(void *arg)
 		atomic_inc(&nr_clients);
 
 		/* check whether accepting a new client or not */
-		while (atomic_read(&nr_clients) == MAX_CLIENTS) {
+		while (atomic_read(&nr_clients) == MAX_CLIENTS || !kthread_should_stop()) {
 			schedule();
 		}
 	}
@@ -120,6 +144,7 @@ static int kecho_init(void)
 	struct sockaddr_in addr;
 
 	atomic_set(&nr_clients, 0);
+	init_completion(&accept_cpl);
 
 	printk(KERN_INFO MODULE_NAME ": start loading...\n");
 
@@ -182,19 +207,21 @@ static void kecho_exit(void)
 	printk(KERN_INFO MODULE_NAME ": start unloading...\n");
 
 	/* wait for stopping othre threads */
+	kthread_stop(accept_kth);
 	err = wake_up_process(accept_kth);
 	printk(KERN_INFO MODULE_NAME ": wake_up_process:ret %d\n", err);
-	wait_for_completion(&accept_cpl);
 
 	/* close listen socket */
+	printk(KERN_INFO MODULE_NAME ": shutdown listen sock\n");
 	err = kernel_sock_shutdown(sock, SHUT_RDWR);
 	if (err < 0) { 
 		ERROR_PRINT(kernel_sock_shutdown); 
 	} 
+	printk(KERN_INFO MODULE_NAME ": sock_release\n");
 	sock_release(sock);
 
-	/* close read/write socket */
-
+	wait_for_completion_interruptible(&accept_cpl);
+	printk(KERN_INFO MODULE_NAME ": wait_for_completion:accept_kth done!\n");
 	printk(KERN_INFO MODULE_NAME ": successfully unloaded\n");
 }
 
