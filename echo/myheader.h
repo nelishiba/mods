@@ -2,3 +2,4 @@
 #define PORT 8880
 #define MSG_SIZE 20
 #define MAX_CLIENTS 5
+#define TIMEOUT 1
