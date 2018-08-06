@@ -50,7 +50,6 @@ static void rw_func(struct work_struct *work)
 	struct socket *sock_rw  = cl->rw_sock;
 	struct kvec vec;
 	int len;
-	mm_segment_t old_fs;
 	
 	cl->rw_kth = current;
 	allow_signal(SIGTERM);
@@ -73,7 +72,7 @@ static void rw_func(struct work_struct *work)
 			printk(KERN_ALERT MODULE_NAME ": rw_sokc:%p, err:%d\n", sock_rw, len);
 			ERROR_PRINT(sock_recvmsg);
 			if (signal_pending(current)) {
-				printk(KERN_ALERT MODULE_NAME "signal_pending(current) == true\n");
+				printk(KERN_ALERT MODULE_NAME ": signal_pending(current) == true\n");
 				break;
 			}
 		}
@@ -105,7 +104,6 @@ static int accept_func(void *arg)
 	INIT_LIST_HEAD(&accept_list);
 
 	while (1) {
-		struct socket *rw_sock;
 		struct client *cl;
 
 		cl = kmalloc(sizeof(struct client), GFP_KERNEL);
@@ -120,8 +118,10 @@ static int accept_func(void *arg)
 
 		if (kthread_should_stop()) {
 			printk(KERN_ALERT MODULE_NAME ": GET INTERRUPTION: BRINGING DOWN...\n");
-			if (signal_pending(current)) 
+			if (signal_pending(current)) {
+				printk(KERN_ALERT MODULE_NAME ": signal_pending(current) == true\n");
 				break;
+			}
 		}
 
 		if (ret == -EINVAL) {
