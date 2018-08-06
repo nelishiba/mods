@@ -50,6 +50,7 @@ static void rw_func(struct work_struct *work)
 	struct socket *sock_rw  = cl->rw_sock;
 	struct kvec vec;
 	int len;
+	printk(KERN_INFO MODULE_NAME ": rw_func: kthread=%p\n", current);
 	
 	cl->rw_kth = current;
 	allow_signal(SIGTERM);
@@ -95,6 +96,8 @@ static int accept_func(void *arg)
 	struct client *tmp;
 	allow_signal(SIGTERM);
 	allow_signal(SIGKILL);
+
+	printk(KERN_INFO MODULE_NAME ": accept_func: kthread=%p\n", current);
 
 	wq = alloc_workqueue("rw_queue", WQ_UNBOUND, MAX_CLIENTS);
 	if (!wq) {
