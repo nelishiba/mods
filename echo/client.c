@@ -9,12 +9,19 @@
 
 #include "myheader.h"
 
+#define MESSAGE1 "hello"
+#define MESSAGE2 "world"
+#define MESSAGE3 "everyone"
+
 int main(int argc, char *argv[])
 {
 	int sock;
 	int err;
 	struct sockaddr_in l_addr;
 	struct sockaddr_in r_addr;
+	int ret;
+	char *buf[3]= {MESSAGE1, MESSAGE2, MESSAGE3};
+	int i = 0;
 
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s remote_addr\n", argv[0]);
@@ -40,8 +47,15 @@ int main(int argc, char *argv[])
 
 	fprintf(stdout, "a connection has been established\n");
 
-	for (;;)
-		sleep(10);
+	do {
+		ret = send(sock, buf[i % 3], strlen(buf[i % 3]), 0);
+		if (ret < 0) {
+			fprintf(stdout, "disconnected\n");
+			break;
+		}
+		sleep(5);
+	} while (++i);
+
 
 	close(sock);
 

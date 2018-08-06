@@ -50,42 +50,32 @@ static void rw_func(struct work_struct *work)
 	struct socket *sock_rw  = cl->rw_sock;
 	struct kvec vec;
 	int len;
-	int ret;
-	struct timeval tv = {
-		.tv_sec = TIMEOUT * HZ,
-		.tv_usec = 0,
-	};
-
+	mm_segment_t old_fs;
+	
 	cl->rw_kth = current;
 	allow_signal(SIGTERM);
+	allow_signal(SIGKILL);
 	/* recv and send */
 	msg.msg_name = 0;
 	msg.msg_namelen = 0;
 	msg.msg_control = NULL;
 	msg.msg_controllen = 0;
-	msg.msg_flags = 0;
+	msg.msg_flags = (MSG_NOSIGNAL);
 	
 	vec.iov_len = MSG_SIZE;
 	vec.iov_base = kmalloc(MSG_SIZE, GFP_KERNEL);
 
-	ret = kernel_setsockopt(sock, SOL_SOCKET, SO_SNDTIMEO, (char *)&tv, sizeof(tv));
-	if (ret != 0) {
-		printk(KERN_ALERT MODULE_NAME ": Can't set socket send timeout %ld.%06d: %d\n",
-				(long)tv.tv_sec, (int)tv.tv_usec, ret);
-		return;
-	}
-
 	do  {
-		len = kernel_recvmsg(sock_rw, &msg, &vec, MSG_SIZE, MSG_SIZE, msg.msg_flags);
+		memset(vec.iov_base, 0, MSG_SIZE);
+		len = kernel_recvmsg(sock_rw, &msg, &vec, 1, MSG_SIZE, msg.msg_flags);
 		printk(KERN_ALERT MODULE_NAME ": sock->state:%d\n", sock_rw->state);
-		if (sock_rw->state == SS_DISCONNECTING) {
-			printk(KERN_ALERT MODULE_NAME ": disconnecting: err:%d\n", len);
-			break;
-		}
 		if (len < 0) {
-			printk(KERN_ALERT MODULE_NAME ": err:%d\n", len);
-			ERROR_PRINT(kernel_recvmsg);
-			break;
+			printk(KERN_ALERT MODULE_NAME ": rw_sokc:%p, err:%d\n", sock_rw, len);
+			ERROR_PRINT(sock_recvmsg);
+			if (signal_pending(current)) {
+				printk(KERN_ALERT MODULE_NAME "signal_pending(current) == true\n");
+				break;
+			}
 		}
 		printk(KERN_INFO MODULE_NAME ": recv: %s (%d)\n", (char *)vec.iov_base, len);
 	} while (len > 0);
@@ -93,8 +83,9 @@ static void rw_func(struct work_struct *work)
 	kfree(vec.iov_base);
 	kernel_sock_shutdown(sock_rw, SHUT_RDWR);
 	sock_release(sock_rw);
-	complete(&cl->cl_cpl);
-	
+	//complete(&cl->cl_cpl);
+	disallow_signal(SIGTERM);
+	disallow_signal(SIGKILL);
 	printk(KERN_INFO MODULE_NAME ": stop rw_kth\n");
 }
 
@@ -117,13 +108,20 @@ static int accept_func(void *arg)
 		struct socket *rw_sock;
 		struct client *cl;
 
+		cl = kmalloc(sizeof(struct client), GFP_KERNEL);
+		if (!cl) {
+			ERROR_PRINT(kmalloc:cl);
+			return -EFAULT;
+		}
+
 		printk(KERN_INFO MODULE_NAME ": wait for a new client arrival...\n");
-		ret = kernel_accept(sock, &rw_sock, 0);
-		printk(KERN_INFO MODULE_NAME ": ret(kernel_accept) = %d\n", ret);
+		ret = kernel_accept(sock, &cl->rw_sock, 0);
+		printk(KERN_INFO MODULE_NAME ": ret(kernel_accept) = %d, rw_sock:%p\n", ret, cl->rw_sock);
 
 		if (kthread_should_stop()) {
 			printk(KERN_ALERT MODULE_NAME ": GET INTERRUPTION: BRINGING DOWN...\n");
-			break;
+			if (signal_pending(current)) 
+				break;
 		}
 
 		if (ret == -EINVAL) {
@@ -137,13 +135,8 @@ static int accept_func(void *arg)
 			continue;
 		}
 		
-		cl = kmalloc(sizeof(struct client), GFP_KERNEL);
-		if (!cl) {
-			ERROR_PRINT(kmalloc:cl);
-			return -EFAULT;
-		}
 		list_add(&cl->cl_list, &accept_list);
-		cl->rw_sock = rw_sock;
+		//cl->rw_sock = rw_sock;
 		init_completion(&cl->cl_cpl);
 		INIT_WORK(&cl->work, rw_func);
 		queue_work(wq, &cl->work);
@@ -152,7 +145,7 @@ static int accept_func(void *arg)
 	list_for_each_entry_safe(cl_p, tmp, &accept_list, cl_list) {
 		list_del(&cl_p->cl_list);
 		send_sig(SIGTERM, cl_p->rw_kth, 0);
-		wait_for_completion_interruptible(&cl_p->cl_cpl);
+		//wait_for_completion_interruptible(&cl_p->cl_cpl);
 		kfree(cl_p);
 		printk(KERN_INFO MODULE_NAME ": delete client\n");
 	}
@@ -161,6 +154,9 @@ static int accept_func(void *arg)
 	printk(KERN_INFO MODULE_NAME ": workqueue destroyed...\n");
 	printk(KERN_INFO MODULE_NAME ": stop accept_kth\n");
 
+	disallow_signal(SIGTERM);
+	disallow_signal(SIGKILL);
+
 	complete_and_exit(&accept_cpl, 0);
 }
 
@@ -168,6 +164,7 @@ static int kecho_init(void)
 {
 	int ret = 0;
 	struct sockaddr_in addr;
+	int opt = 1;
 
 	init_completion(&accept_cpl);
 
@@ -185,9 +182,11 @@ static int kecho_init(void)
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = htonl(INADDR_ANY);
 	addr.sin_port = htons(PORT);
+	ret = kernel_setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, (char *)&opt, sizeof(opt));
 
 	ret = kernel_bind(sock, (struct sockaddr *)&addr, sizeof(addr));
 	if (ret < 0) {
+		printk(KERN_ALERT MODULE_NAME ": err: %d\n", ret);
 		ERROR_PRINT(kernel_bind);
 		goto release_out;
 	}
