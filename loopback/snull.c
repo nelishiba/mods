@@ -18,6 +18,8 @@
 MODULE_AUTHOR("Hiroki Watanabe");
 MODULE_LICENSE("Dual BSD/GPL");
 
+#define MODULE_NAME "SNULL"
+
 struct net_device *snull_devs[2];
 
 /*
@@ -137,6 +139,7 @@ void snull_setup(struct net_device *dev)
 void snull_exit(void)
 {
 	int i;
+	printk(KERN_INFO MODULE_NAME ": start unloading...\n");
 	for (i = 0; i < 2; i++) {
 		if (snull_devs[i]) {
 			unregister_netdev(snull_devs[i]);
@@ -144,20 +147,40 @@ void snull_exit(void)
 			free_netdev(snull_devs[i]);
 		}
 	}
+
+	printk(KERN_INFO MODULE_NAME ": unloading done.\n");
 	return;
 }
 
 int snull_init(void)
 {
+	int i;
+	int result;
 	int ret = -ENOMEM;
+	printk(KERN_INFO MODULE_NAME ": start loading...\n");
 
 
 	/* allocate the devices */
-	snull_devs[0] = alloc_netdev(0, "sn%d", NET_NAME_UNKNOWN, snull_setup);
-	snull_devs[1] = alloc_netdev(1, "sn%d", NET_NAME_UNKNOWN, snull_setup);
+	snull_devs[0] = alloc_netdev(sizeof(struct snull_priv), "sn%d", NET_NAME_UNKNOWN, snull_setup);
+	snull_devs[1] = alloc_netdev(sizeof(struct snull_priv), "sn%d", NET_NAME_UNKNOWN, snull_setup);
 
-	if (snull_devs[0] == NULL || snull_devs[1] == NULL)
+	if (snull_devs[0] == NULL || snull_devs[1] == NULL) {
+		printk(KERN_ALERT MODULE_NAME ": failed to allocate network device.\n");
 		goto out;
+	}
+
+	ret = -ENODEV;
+
+	for (i = 0; i < 2; i++) {
+		if ((result = register_netdev(snull_devs[i]))) {
+			printk(KERN_INFO MODULE_NAME ": error %i registering device \"%s\"\n",
+					result, snull_devs[i]->name);
+		} else {
+			/* device registering OK */
+			ret = 0;
+		}
+
+	}
 
 out: if (ret)
 		 snull_exit();
