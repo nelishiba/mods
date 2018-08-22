@@ -63,6 +63,15 @@ module_param(use_napi, int, 0);
 
 //static void (*snull_interrupt)(int, void *, struct pt_regs *);
 
+/*
+ * Enable and disable receive interrupts.
+ */
+static void snull_rx_ints(struct net_device *dev, int enable)
+{
+	struct snull_priv *priv = netdev_priv(dev);
+	priv->rx_int_enabled = enable;
+}
+
 static void snull_hw_tx(char *buf, int len, struct net_device *dev)
 {
 
@@ -129,10 +138,18 @@ static const struct net_device_ops snull_ops = {
 
 void snull_setup(struct net_device *dev)
 {
+	struct snull_priv *priv;
+
 	eth_hw_addr_random(dev);
 	ether_setup(dev);
 
 	dev->netdev_ops = &snull_ops;
+
+	priv = netdev_priv(dev);
+	memset(priv, 0, sizeof(struct snull_priv));
+	spin_lock_init(&priv->lock);
+	snull_rx_ints(dev, 1);
+
 	return;
 }
 
