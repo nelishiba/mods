@@ -7,6 +7,7 @@
 #include <linux/errno.h>
 #include <linux/types.h>
 #include <linux/etherdevice.h>
+#include <linux/ethtool.h>
 #include <linux/skbuff.h>
 #include <linux/in.h>
 #include <linux/ip.h>
@@ -30,6 +31,9 @@ module_param(lockup, int, 0);
 
 static int timeout = 5; /* in jiffies */
 module_param(timeout, int, 0);
+
+int pool_size = 8;
+module_param(pool_size, int, 0);
 
 /*
  * A structure representing an in-flight packet.
@@ -61,6 +65,10 @@ struct snull_priv {
 static int use_napi = 0;
 module_param(use_napi, int, 0);
 
+static u32 always_on(struct net_device *dev) {
+	return 1;
+}
+
 //static void (*snull_interrupt)(int, void *, struct pt_regs *);
 
 /*
@@ -74,12 +82,64 @@ static void snull_rx_ints(struct net_device *dev, int enable)
 
 static void snull_hw_tx(char *buf, int len, struct net_device *dev)
 {
+	/*
+	 * this function implements snull's mechanism.
+	 *
+	 * */
+	struct iphdr *ih;
+	struct net_device *dest;
+	struct snull_priv *priv;
+	u32 *saddr;
+	u32 *daddr;
+	struct snull_packet *tx_buffer;
 
+	if (len < sizeof(struct ethhdr) + sizeof(struct iphdr)) {
+		printk(KERN_ALERT MODULE_NAME ": snull: packet too short (%i octets)\n",
+				len);
+		return;
+	}
+
+	ih = (struct iphdr *)(buf+sizeof(struct ethhdr));
+	saddr = &ih->saddr;
+	daddr = &ih->daddr;
+
+	((u8 *)saddr)[2] ^= 1; /* change the third octet */
+	((u8 *)daddr)[2] ^= 1;
+
+	ih->check = 0; /* and rebuild the checksum (ip needs it)  */
+	ih->check = ip_fast_csum((unsigned char *)ih, ih->ihl);
+	printk(KERN_INFO MODULE_NAME ": ih->check = %d\n", ih->check);
+
+}
+
+void snull_setup_pool(struct net_device *dev) 
+{
+	struct snull_priv *priv = netdev_priv(dev);
+	int i;
+	struct snull_packet *pkt;
+
+	priv->ppool = NULL;
+	for (i = 0; i < pool_size; i++) {
+		pkt = kmalloc(sizeof(struct snull_packet), GFP_KERNEL);
+		if (pkt == NULL) {
+			printk(KERN_NOTICE MODULE_NAME ": Ran out of memory allocating pkt pool\n");
+			return;
+		}
+		pkt->dev = dev;
+		pkt->next = priv->ppool;
+		priv->ppool = pkt;
+	}
 }
 
 void snull_teardown_pool(struct net_device *dev)
 {
+	struct snull_priv *priv = netdev_priv(dev);
+	struct snull_packet *pkt;
 
+	while ((pkt = priv->ppool)) {
+		priv->ppool = pkt->next;
+		kfree(pkt);
+	}
 }
 
 struct net_device_stats *snull_get_stats(struct net_device *dev)
@@ -136,6 +196,10 @@ static const struct net_device_ops snull_ops = {
 	.ndo_get_stats = snull_get_stats,
 };
 
+static const struct ethtool_ops snull_ethtool_ops = {
+	.get_link = always_on,
+};
+
 void snull_setup(struct net_device *dev)
 {
 	struct snull_priv *priv;
@@ -145,10 +209,18 @@ void snull_setup(struct net_device *dev)
 
 	dev->netdev_ops = &snull_ops;
 
+	/* test */
+	dev->ethtool_ops = &snull_ethtool_ops;
+
+	/* flags */
+	dev->flags |= IFF_NOARP;
+	dev->features |= NETIF_F_HW_CSUM;
+
 	priv = netdev_priv(dev);
 	memset(priv, 0, sizeof(struct snull_priv));
 	spin_lock_init(&priv->lock);
 	snull_rx_ints(dev, 1);
+	snull_setup_pool(dev);
 
 	return;
 }
@@ -160,7 +232,7 @@ void snull_exit(void)
 	for (i = 0; i < 2; i++) {
 		if (snull_devs[i]) {
 			unregister_netdev(snull_devs[i]);
-//			snull_teardown_pool(snull_devs[i]);
+			snull_teardown_pool(snull_devs[i]);
 			free_netdev(snull_devs[i]);
 		}
 	}
